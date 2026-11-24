@@ -91,3 +91,13 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(september.value_method, "last")
         self.assertEqual(september.value_mae, 600)
         self.assertEqual(september.low_base_hits, 3)
+
+    def test_regional_evaluation_ranks_predictions_and_outcomes_inside_the_same_pool(self):
+        data = panel()
+        target = pd.Period("2024-08", freq="M")
+        data.loc[target] = [200, 190, 160, 130, 20_000]
+        data.loc[target - 2, "E"] = 10_000
+        metrics = evaluate(data, target, 1, allowed_ids={"A", "B", "C", "D"}).set_index("method")
+        self.assertEqual(metrics.at["last", "eligible"], 4)
+        self.assertEqual(metrics.at["last", "pairs"], 4)
+        self.assertEqual(metrics.at["last", "top3_hits"], 2)

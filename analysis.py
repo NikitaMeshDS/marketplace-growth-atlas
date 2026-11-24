@@ -76,9 +76,14 @@ def prepare_pilot(
     return shortlist(eligible, method, count=count)
 
 
-def evaluate(panel: pd.DataFrame, target: pd.Period, lag: int, floor: int = 0) -> pd.DataFrame:
+def evaluate(
+    panel: pd.DataFrame, target: pd.Period, lag: int, floor: int = 0,
+    allowed_ids: set[str] | None = None,
+) -> pd.DataFrame:
     predictions = forecast(panel, target, lag).sort_index()
     predictions = predictions.loc[predictions.year_ago.ge(floor)]
+    if allowed_ids is not None:
+        predictions = predictions.loc[predictions.index.isin(allowed_ids)]
     actual = panel.loc[target].reindex(predictions.index)
     actual_growth = actual / predictions.year_ago - 1
     actual_percentile = actual_growth.rank(pct=True)
@@ -165,6 +170,29 @@ def walk_forward(monthly: pd.DataFrame, lag: int = 1, min_history: int = 3) -> p
     return pd.DataFrame(results)
 
 
+def regional_backtest(panel: pd.DataFrame, geography: pd.DataFrame) -> pd.DataFrame:
+    """Replay the public demo's Krasnoyarsk scenario on every archive month."""
+    membership = geography.loc[
+        geography.region_name.eq("Красноярский край") & geography.year.isin([2023, 2024])
+    ]
+    years = membership.groupby("territory_id").year.nunique()
+    ids = set(years[years.eq(2)].index)
+    result = []
+    for target in TARGETS:
+        scores = evaluate(panel, target, lag=1, floor=2000, allowed_ids=ids).set_index("method")
+        last = scores.loc["last"]
+        result.append({
+            "target": str(target),
+            "cutoff": str(target - 2),
+            "eligible": int(last.eligible),
+            "observed": int(last.pairs),
+            "signal_hits": last.top3_hits,
+            "absolute_delta_hits": scores.at["last_delta", "top3_hits"],
+            "low_base_hits": scores.at["low_base", "top3_hits"],
+        })
+    return pd.DataFrame(result)
+
+
 def run(data: Path, geography: Path, destination: Path) -> None:
     panel = load_panel(data)
     destination.mkdir(parents=True, exist_ok=True)
@@ -201,6 +229,9 @@ def run(data: Path, geography: Path, destination: Path) -> None:
     predictions = forecast(panel, DEMO_TARGET, 1)
     selected = shortlist(predictions, rank_method)
     geography_rows = pd.read_csv(geography, dtype={"territory_id": str})
+    regional_backtest(panel, geography_rows).to_csv(
+        destination / "krasnoyarsk-backtest.csv", index=False, float_format="%.0f"
+    )
     geo = geography_rows.loc[geography_rows.year.eq(DEMO_TARGET.year)].rename(columns={
         "municipal_district_name_short": "name",
         "municipal_district_center": "center",
