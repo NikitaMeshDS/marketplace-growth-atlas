@@ -65,3 +65,29 @@ class AnalysisTests(unittest.TestCase):
         target = pd.Period("2024-12", freq="M")
         self.assertEqual(selection_history(monthly, target, 1).target.tolist(), ["2024-10"])
         self.assertEqual(selection_history(monthly, target, 0).target.tolist(), ["2024-11"])
+
+    def test_walk_forward_skips_short_history_and_never_uses_previous_month_with_lag(self):
+        from analysis import walk_forward
+
+        months = ["2024-05", "2024-06", "2024-07", "2024-08", "2024-09"]
+        rows = []
+        for index, month in enumerate(months):
+            for method, early_pct, late_pct, early_mae, late_mae, hits in [
+                ("last", .9, .1, 100, 600, 2),
+                ("recent", .8, 1., 120, 10, 1),
+                ("low_base", .95, .95, float("nan"), float("nan"), 3),
+            ]:
+                rows.append({
+                    "target": month, "lag": 1, "method": method,
+                    "mae": early_mae if index < 3 else late_mae, "pairs": 10,
+                    "top3_pct_mean": early_pct if index < 3 else late_pct,
+                    "top3_hits": hits,
+                })
+        result = walk_forward(pd.DataFrame(rows), min_history=3)
+        self.assertEqual(result["target"].tolist(), ["2024-09"])
+        september = result.iloc[0]
+        self.assertEqual(september.cutoff, "2024-07")
+        self.assertEqual(september.rank_method, "last")
+        self.assertEqual(september.value_method, "last")
+        self.assertEqual(september.value_mae, 600)
+        self.assertEqual(september.low_base_hits, 3)

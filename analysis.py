@@ -129,6 +129,42 @@ def selection_history(monthly: pd.DataFrame, target: pd.Period, lag: int) -> pd.
     return monthly.loc[monthly.lag.eq(lag) & monthly.target.le(str(cutoff))]
 
 
+def select_methods(history: pd.DataFrame) -> tuple[pd.DataFrame, str, str]:
+    scores = history.groupby("method", sort=False).agg(
+        mae=("mae", "mean"), top3_pct_mean=("top3_pct_mean", "mean"),
+        top3_months=("top3_pct_mean", "count"), top3_hits=("top3_hits", "mean"),
+    )
+    comparable = scores.loc[scores.top3_months.eq(history.target.nunique())]
+    rank = comparable.loc[comparable.index.isin(METHODS), "top3_pct_mean"]
+    return scores, rank.idxmax(), scores.mae.idxmin()
+
+
+def walk_forward(monthly: pd.DataFrame, lag: int = 1, min_history: int = 3) -> pd.DataFrame:
+    """Re-select both methods before scoring each future month."""
+    results = []
+    for month, entries in monthly.loc[monthly.lag.eq(lag)].groupby("target", sort=True):
+        target = pd.Period(month, freq="M")
+        history = selection_history(monthly, target, lag)
+        months = history.target.nunique()
+        if months < min_history:
+            continue
+        _, rank, value = select_methods(history)
+        actual = entries.set_index("method")
+        results.append({
+            "target": month,
+            "cutoff": str(target - 1 - lag),
+            "history_months": months,
+            "rank_method": rank,
+            "rank_hits": actual.at[rank, "top3_hits"],
+            "low_base_hits": actual.at["low_base", "top3_hits"],
+            "value_method": value,
+            "value_mae": actual.at[value, "mae"],
+            "last_mae": actual.at["last", "mae"],
+            "recent_mae": actual.at["recent", "mae"],
+        })
+    return pd.DataFrame(results)
+
+
 def run(data: Path, geography: Path, destination: Path) -> None:
     panel = load_panel(data)
     destination.mkdir(parents=True, exist_ok=True)
@@ -137,6 +173,7 @@ def run(data: Path, geography: Path, destination: Path) -> None:
         ignore_index=True,
     )
     monthly.to_csv(destination / "backtest.csv", index=False, float_format="%.8f")
+    walk_forward(monthly).to_csv(destination / "walk-forward.csv", index=False, float_format="%.8f")
     constrained = pd.concat(
         [evaluate(panel, target, 1, floor=floor) for floor in FLOORS for target in TARGETS],
         ignore_index=True,
@@ -159,15 +196,8 @@ def run(data: Path, geography: Path, destination: Path) -> None:
     )
     summary.to_csv(destination / "summary.csv", float_format="%.8f")
     history = selection_history(monthly, DEMO_TARGET, 1)
-    selection = history.groupby("method", sort=False).agg(
-        mae=("mae", "mean"), top3_pct_mean=("top3_pct_mean", "mean"),
-        top3_months=("top3_pct_mean", "count"),
-        top3_hits=("top3_hits", "mean"),
-    )
+    selection, rank_method, value_method = select_methods(history)
     selection.to_csv(destination / "selection.csv", float_format="%.8f")
-    comparable = selection.loc[selection.top3_months.eq(history.target.nunique())]
-    rank_method = comparable.loc[comparable.index.isin(METHODS), "top3_pct_mean"].idxmax()
-    value_method = selection.mae.idxmin()
     predictions = forecast(panel, DEMO_TARGET, 1)
     selected = shortlist(predictions, rank_method)
     geography_rows = pd.read_csv(geography, dtype={"territory_id": str})
