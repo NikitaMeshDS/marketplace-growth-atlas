@@ -125,3 +125,22 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(august.loc["small", ["eligible", "observed", "status"]].tolist(), [4, 4, "small_pool"])
         self.assertTrue(pd.isna(august.at["missing", "signal_hits"]))
         self.assertTrue(pd.notna(august.at["complete", "signal_hits"]))
+        self.assertEqual(august.at["complete", "recent_growth_hits"], 3)
+        self.assertEqual(august.at["complete", "adaptive_growth_hits"], 3)
+
+    def test_regional_threshold_summary_uses_the_same_region_months_across_thresholds(self):
+        from analysis import summarize_regional_floors
+
+        rows = []
+        for floor, regions in ((0, ("A", "B")), (2000, ("B", "C"))):
+            for region in regions:
+                rows.append({
+                    "floor": floor, "region": region, "target": "2024-08", "status": "compared",
+                    "signal_hits": {"A": 3, "B": 2, "C": 0}[region], "absolute_delta_hits": 1,
+                    "low_base_hits": 2, "recent_growth_hits": 2, "adaptive_growth_hits": 1,
+                })
+        summary = summarize_regional_floors(pd.DataFrame(rows)).set_index(["cohort", "floor"])
+        self.assertEqual(summary.loc[("all", 0), ["slices", "slots", "signal_hits"]].tolist(), [2, 6, 5])
+        self.assertEqual(summary.loc[("all", 2000), ["slices", "slots", "signal_hits"]].tolist(), [2, 6, 2])
+        for floor in (0, 2000):
+            self.assertEqual(summary.loc[("common", floor), ["slices", "slots", "signal_hits"]].tolist(), [1, 3, 2])

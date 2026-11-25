@@ -18,6 +18,8 @@ REGIONAL_RULES = {
     "last": "signal_hits",
     "last_delta": "absolute_delta_hits",
     "low_base": "low_base_hits",
+    "recent": "recent_growth_hits",
+    "adaptive": "adaptive_growth_hits",
 }
 
 
@@ -206,8 +208,10 @@ def regional_backtest(panel: pd.DataFrame, geography: pd.DataFrame) -> pd.DataFr
     return pd.DataFrame(result)
 
 
-def regional_coverage(panel: pd.DataFrame, geography: pd.DataFrame) -> pd.DataFrame:
-    """Compare the three fixed ranking rules with the same pool and fully known outcomes."""
+def regional_coverage(
+    panel: pd.DataFrame, geography: pd.DataFrame, floor: int = REGIONAL_FLOOR,
+) -> pd.DataFrame:
+    """Compare fixed ranking rules with the same pool and fully known outcomes."""
     membership = geography.loc[geography.year.isin([2023, 2024])]
     years = membership.groupby(["region_name", "territory_id"]).year.nunique()
     stable = years[years.eq(2)].reset_index(name="years")
@@ -215,7 +219,7 @@ def regional_coverage(panel: pd.DataFrame, geography: pd.DataFrame) -> pd.DataFr
     result = []
     for target in TARGETS:
         predictions = forecast(panel, target, lag=1).sort_index()
-        predictions = predictions.loc[predictions.year_ago.ge(REGIONAL_FLOOR)]
+        predictions = predictions.loc[predictions.year_ago.ge(floor)]
         outcomes = panel.loc[target]
         for region, ids in regions.items():
             pool = predictions.loc[predictions.index.isin(ids)]
@@ -227,7 +231,7 @@ def regional_coverage(panel: pd.DataFrame, geography: pd.DataFrame) -> pd.DataFr
             elif observed < eligible:
                 status = "missing_outcomes"
             else:
-                scores = evaluate_predictions(pool, outcomes, target, 1, REGIONAL_FLOOR)
+                scores = evaluate_predictions(pool, outcomes, target, 1, floor)
                 measured_hits = scores.set_index("method").loc[list(REGIONAL_RULES), "top3_hits"]
                 status = "unranked"
                 if measured_hits.notna().all():
@@ -235,9 +239,22 @@ def regional_coverage(panel: pd.DataFrame, geography: pd.DataFrame) -> pd.DataFr
                     hits = measured_hits.rename(index=REGIONAL_RULES).to_dict()
             result.append({
                 "region": region, "target": str(target), "cutoff": str(target - 2),
-                "eligible": eligible, "observed": observed, "status": status, **hits,
+                "floor": floor, "eligible": eligible, "observed": observed, "status": status, **hits,
             })
     return pd.DataFrame(result)
+
+
+def summarize_regional_floors(results: pd.DataFrame) -> pd.DataFrame:
+    """Report all scored slices and the region-months scored at every tested floor."""
+    compared = results.loc[results.status.eq("compared")].copy()
+    comparable_floors = compared.groupby(["region", "target"]).floor.transform("nunique")
+    common = compared.loc[comparable_floors.eq(results.floor.nunique())]
+    cohorts = pd.concat({"all": compared, "common": common}, names=["cohort"])
+    by_floor = cohorts.groupby([cohorts.index.get_level_values("cohort"), "floor"])
+    summary = by_floor[list(REGIONAL_RULES.values())].sum()
+    summary.insert(0, "slices", by_floor.size())
+    summary.insert(1, "slots", summary.slices * 3)
+    return summary.reset_index()
 
 
 def run(data: Path, geography: Path, destination: Path) -> None:
@@ -279,8 +296,14 @@ def run(data: Path, geography: Path, destination: Path) -> None:
     regional_backtest(panel, geography_rows).to_csv(
         destination / "krasnoyarsk-backtest.csv", index=False, float_format="%.0f"
     )
-    regional_coverage(panel, geography_rows).to_csv(
+    regional_results = pd.concat(
+        [regional_coverage(panel, geography_rows, floor) for floor in FLOORS], ignore_index=True,
+    )
+    regional_results.loc[regional_results.floor.eq(REGIONAL_FLOOR)].to_csv(
         destination / "regional-coverage.csv", index=False, float_format="%.0f"
+    )
+    summarize_regional_floors(regional_results).to_csv(
+        destination / "regional-floor-comparison.csv", index=False, float_format="%.0f"
     )
     geo = geography_rows.loc[geography_rows.year.eq(DEMO_TARGET.year)].rename(columns={
         "municipal_district_name_short": "name",
