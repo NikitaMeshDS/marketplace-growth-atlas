@@ -101,3 +101,27 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(metrics.at["last", "eligible"], 4)
         self.assertEqual(metrics.at["last", "pairs"], 4)
         self.assertEqual(metrics.at["last", "top3_hits"], 2)
+
+    def test_regional_coverage_accounts_for_small_pools_and_missing_outcomes(self):
+        from analysis import regional_coverage
+
+        pools = {"complete": 10, "missing": 10, "small": 5}
+        months = panel().index
+        data = pd.DataFrame({
+            f"{region}-{i}": [2400 + 20 * i + (i + 2) * t for t in range(len(months))]
+            for region, count in pools.items() for i in range(count)
+        }, index=months)
+        data.loc["2024-08", "missing-2"] = float("nan")
+        geography = pd.DataFrame([
+            {"year": year, "region_name": key.split("-")[0], "territory_id": key}
+            for key in data for year in (2023, 2024)
+        ])
+        moved = geography.territory_id.eq("small-0") & geography.year.eq(2023)
+        geography.loc[moved, "region_name"] = "old"
+        result = regional_coverage(data, geography)
+        august = result.loc[result.target.eq("2024-08")].set_index("region")
+        self.assertEqual(august.loc["complete", ["eligible", "observed", "status"]].tolist(), [10, 10, "compared"])
+        self.assertEqual(august.loc["missing", ["eligible", "observed", "status"]].tolist(), [10, 9, "missing_outcomes"])
+        self.assertEqual(august.loc["small", ["eligible", "observed", "status"]].tolist(), [4, 4, "small_pool"])
+        self.assertTrue(pd.isna(august.at["missing", "signal_hits"]))
+        self.assertTrue(pd.notna(august.at["complete", "signal_hits"]))
