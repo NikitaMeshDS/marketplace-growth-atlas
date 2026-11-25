@@ -1,5 +1,61 @@
 const rubles = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 const decimals = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+const decisionPrefix = "atlas-candidate-v1:";
+
+export const decisionStatuses = {
+  pending: "Не оценён",
+  review: "Проверить дальше",
+  excluded: "Исключён",
+  "needs-data": "Нужны данные",
+};
+export const pilotChecks = {
+  delivery: "Адрес и срок доставки",
+  stock: "Наличие товара",
+  ads: "Доступная зона показа",
+};
+
+function normalizeDecision(value) {
+  return {
+    status: Object.hasOwn(decisionStatuses, value?.status) ? value.status : "pending",
+    reason: typeof value?.reason === "string" ? value.reason.slice(0, 500) : "",
+    checks: Object.fromEntries(Object.keys(pilotChecks).map(key => [key, value?.checks?.[key] === true])),
+  };
+}
+
+function readDecision(storage, key, fallback) {
+  try {
+    return normalizeDecision(JSON.parse(storage?.getItem(key) ?? "null") ?? fallback);
+  } catch {
+    return normalizeDecision(fallback);
+  }
+}
+
+export function loadDecisions(storage) {
+  const entries = [];
+  try {
+    for (let index = 0; index < (storage?.length ?? 0); index++) {
+      const key = storage.key(index);
+      if (key?.startsWith(decisionPrefix)) {
+        entries.push([key.slice(decisionPrefix.length), readDecision(storage, key)]);
+      }
+    }
+  } catch {
+    // The browser may block access to local storage.
+  }
+  return Object.fromEntries(entries);
+}
+
+export function saveDecision(storage, id, patch, fallback) {
+  const key = decisionPrefix + id;
+  const previous = readDecision(storage, key, fallback);
+  const decision = normalizeDecision({ ...previous, ...patch, checks: { ...previous.checks, ...patch.checks } });
+  try {
+    storage?.setItem(key, JSON.stringify(decision));
+    return { decision, saved: !!storage };
+  } catch {
+    return { decision, saved: false };
+  }
+}
 
 export const amount = (value) => `${rubles.format(value)} ₽`;
 export const signed = (value) => `${value > 0 ? "+" : ""}${decimals.format(value * 100)}%`;
@@ -20,11 +76,21 @@ export function orderThreshold(budget, margin) {
   };
 }
 
-export function csvText(rows) {
+export function csvText(rows, decisions = {}) {
   const quote = value => `"${String(value).replaceAll('"', '""')}"`;
-  const lines = rows.map(row => [
-    row.id, quote(row.name), quote(row.region), row.base, row.last,
-    (row.score * 100).toFixed(1).replace(".", ","),
-  ].join(";"));
-  return "\uFEFF" + ["Код;Муниципалитет;Субъект;Декабрь 2023;Октябрь 2024;Сигнал роста (%)", ...lines].join("\r\n");
+  const headers = [
+    "Код", "Муниципалитет", "Субъект", "Декабрь 2023", "Октябрь 2024", "Сигнал роста (%)",
+    "Статус", "Причина", ...Object.values(pilotChecks),
+  ];
+  const lines = rows.map(row => {
+    const { status, reason, checks } = normalizeDecision(decisions[row.id]);
+    const safeReason = /^(?:\s*[=+\-@]|[\t\r\n])/u.test(reason) ? "'" + reason : reason;
+    return [
+      row.id, quote(row.name), quote(row.region), row.base, row.last,
+      (row.score * 100).toFixed(1).replace(".", ","),
+      quote(decisionStatuses[status]), quote(safeReason),
+      ...Object.keys(pilotChecks).map(key => quote(checks[key] ? "Подтверждено" : "Не отмечено")),
+    ].join(";");
+  });
+  return "\uFEFF" + [headers.join(";"), ...lines].join("\r\n");
 }

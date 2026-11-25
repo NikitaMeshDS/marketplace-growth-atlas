@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, ChartNoAxesColumnIncreasing,
@@ -7,7 +7,9 @@ import {
 import atlas from "atlas-evidence";
 import "@fontsource-variable/manrope";
 import "./style.css";
-import { amount, csvText, orderThreshold, shortlist, signed } from "./model.mjs";
+import {
+  amount, csvText, decisionStatuses, loadDecisions, orderThreshold, pilotChecks, saveDecision, shortlist, signed,
+} from "./model.mjs";
 import { TerritoryMap } from "./TerritoryMap.jsx";
 import { Review } from "./Review.jsx";
 
@@ -22,7 +24,15 @@ const pageTitles = {
   review: ["Проверка на истории", "Посмотрите, как фильтры влияют на результат и что показало сравнение методов."],
 };
 const regions = [...new Set(atlas.candidates.map(row => row.region))].sort((a, b) => a.localeCompare(b, "ru"));
-const checks = ["Адрес и срок доставки", "Наличие товара", "Доступная зона показа"];
+const checks = Object.entries(pilotChecks);
+
+function browserStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 function Select({ id, label, children, ...props }) {
   return <label className="form-field" htmlFor={id}><span>{label}</span>
@@ -30,8 +40,8 @@ function Select({ id, label, children, ...props }) {
   </label>;
 }
 
-function download(rows) {
-  const url = URL.createObjectURL(new Blob([csvText(rows)], { type: "text/csv;charset=utf-8" }));
+function download(rows, decisions) {
+  const url = URL.createObjectURL(new Blob([csvText(rows, decisions)], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
   link.download = "atlas-shortlist.csv";
@@ -39,7 +49,7 @@ function download(rows) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function CandidateList({ rows, count, selected, onSelect, onPilot }) {
+function CandidateList({ rows, count, selected, decisions, onSelect, onPilot }) {
   return <section className="shortlist-panel" aria-labelledby="shortlist-title">
     <div className="shortlist-head">
       <h2 id="shortlist-title">Список кандидатов</h2>
@@ -50,7 +60,11 @@ function CandidateList({ rows, count, selected, onSelect, onPilot }) {
       <button className={`candidate ${selected?.id === row.id ? "active" : ""}`}
         onClick={() => onSelect(row.id)} aria-pressed={selected?.id === row.id}>
         <span className="candidate-number">{index + 1}</span>
-        <span className="candidate-name"><strong>{row.name}</strong><small>{row.region}</small></span>
+        <span className="candidate-name">
+          <strong>{row.name}</strong><small>{row.region}</small>
+          {decisions[row.id]?.status && decisions[row.id].status !== "pending" &&
+            <small className="candidate-status">{decisionStatuses[decisions[row.id].status]}</small>}
+        </span>
         <span className="candidate-score">{signed(row.score)}</span>
       </button>
     </li>)}</ol>
@@ -63,11 +77,10 @@ function CandidateList({ rows, count, selected, onSelect, onPilot }) {
   </section>;
 }
 
-function Pilot({ rows, selected, onSelect, onBack }) {
+function Pilot({ rows, selected, decision, storageFailed, onDecision, onSelect, onBack }) {
   const [budget, setBudget] = useState("6000");
   const [margin, setMargin] = useState("300");
-  const [validation, setValidation] = useState({ id: null, checks: [] });
-  const checked = validation.id === selected?.id ? validation.checks : [];
+  const confirmed = checks.filter(([key]) => decision?.checks[key]).length;
   const threshold = orderThreshold(budget, margin);
   if (!selected) return <section className="surface empty">
     <h2>Выберите территорию</h2><p>Расчёт пилота начинается со списка кандидатов.</p>
@@ -76,8 +89,7 @@ function Pilot({ rows, selected, onSelect, onBack }) {
   return <div className="pilot-layout">
     <section className="surface pilot-inputs">
       <div className="section-heading"><h2>Условия кампании</h2><p>Учебный товар: органайзер для кабелей, схема FBS.</p></div>
-      <Select id="pilot-territory" label="Территория" value={selected.id}
-        onChange={e => { onSelect(e.target.value); setValidation({ id: null, checks: [] }); }}>
+      <Select id="pilot-territory" label="Территория" value={selected.id} onChange={e => onSelect(e.target.value)}>
         {rows.map(row => <option key={row.id} value={row.id}>{row.name}, {row.region}</option>)}
       </Select>
       <div className="center"><MapPin size={18}/><div><strong>{selected.center || selected.region}</strong><small>
@@ -90,14 +102,25 @@ function Pilot({ rows, selected, onSelect, onBack }) {
       </div>
       <p className="inline-note">Маржа на выкупленный заказ после переменных затрат, до рекламы.</p>
       <fieldset className="checklist"><legend>Проверки перед запуском</legend>
-        {checks.map((label, index) => <label key={label}>
-          <input type="checkbox" checked={checked.includes(index)}
-            onChange={e => setValidation({
-              id: selected.id,
-              checks: e.target.checked ? [...checked, index] : checked.filter(i => i !== index),
-            })}/>{label}
+        {checks.map(([key, label]) => <label key={key}>
+          <input type="checkbox" checked={decision?.checks[key] ?? false}
+            onChange={e => onDecision(selected.id, { checks: { [key]: e.target.checked } })}/>{label}
         </label>)}
       </fieldset>
+      <div className="pilot-decision">
+        <Select id="decision-status" label="Статус кандидата" value={decision?.status ?? "pending"}
+          onChange={e => onDecision(selected.id, { status: e.target.value })}>
+          {Object.entries(decisionStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </Select>
+        <label className="form-field" htmlFor="decision-reason"><span>Причина решения</span>
+          <textarea id="decision-reason" rows={2} maxLength={500} value={decision?.reason ?? ""}
+            onChange={e => onDecision(selected.id, { reason: e.target.value })}/>
+        </label>
+        <p className="inline-note" role={storageFailed ? "status" : undefined}>
+          {storageFailed ? "Сохранение в браузере недоступно. Выгрузите список, чтобы сохранить отметки." :
+            "Отметки сохраняются для этой территории в текущем браузере."}
+        </p>
+      </div>
     </section>
     <section className="pilot-result">
       <h2>Экономика пилота</h2>
@@ -106,8 +129,8 @@ function Pilot({ rows, selected, onSelect, onBack }) {
         <div><strong>{threshold?.profitable ?? "—"}</strong><span>заказов для положительной прибыли</span></div>
       </div>
       <div className="pilot-status" role="status">{!threshold ? "Введите целые положительные суммы бюджета и маржи." :
-        checked.length === checks.length ? "Учебная проверка завершена. Можно спланировать пилот." :
-        `Проверено условий: ${checked.length} из ${checks.length}`}</div>
+        confirmed === checks.length ? "Все условия отмечены." :
+        `Проверено условий: ${confirmed} из ${checks.length}`}</div>
       <p>Для реальной кампании сверяйте товар, адрес доставки и географию показов в кабинете продавца.</p>
     </section>
   </div>;
@@ -118,13 +141,31 @@ function App() {
   const [region, setRegion] = useState("");
   const [floor, setFloor] = useState(2000);
   const [selectedId, setSelectedId] = useState(null);
+  const [storage] = useState(browserStorage);
+  const [decisions, setDecisions] = useState(() => loadDecisions(storage));
+  const [storageFailed, setStorageFailed] = useState(!storage);
   const { rows, count } = useMemo(() => shortlist(atlas.candidates, region, floor), [region, floor]);
   const selected = rows.find(row => row.id === selectedId) ?? rows[0];
   const [title, subtitle] = pageTitles[tab];
 
+  useEffect(() => {
+    if (storageFailed) return;
+    function syncDecisions(event) {
+      if (event.storageArea === storage) setDecisions(loadDecisions(storage));
+    }
+    window.addEventListener("storage", syncDecisions);
+    return () => window.removeEventListener("storage", syncDecisions);
+  }, [storage, storageFailed]);
+
   function move(next) {
     setTab(next);
     window.scrollTo(0, 0);
+  }
+
+  function record(id, patch) {
+    const { decision, saved } = saveDecision(storageFailed ? null : storage, id, patch, decisions[id]);
+    setDecisions(current => ({ ...current, [id]: decision }));
+    setStorageFailed(!saved);
   }
 
   return <>
@@ -141,8 +182,8 @@ function App() {
     <main>
       <div className="page-heading">
         <div><h1>{title}</h1><p>{subtitle}</p></div>
-        {tab === "atlas" && <button className="button secondary export" disabled={!rows.length}
-          onClick={() => download(rows)}><ArrowDownToLine size={17}/> Скачать список</button>}
+        {tab !== "review" && <button className="button secondary export" disabled={!rows.length}
+          onClick={() => download(rows, decisions)}><ArrowDownToLine size={17}/> Скачать список</button>}
       </div>
       {tab === "atlas" && <>
         <div className="filterbar">
@@ -162,7 +203,7 @@ function App() {
         <div className="workbench">
           <TerritoryMap data={atlas.candidates} outline={atlas.outline} rows={rows}
             selected={selected} onSelect={setSelectedId}/>
-          <CandidateList rows={rows} count={count} selected={selected}
+          <CandidateList rows={rows} count={count} selected={selected} decisions={decisions}
             onSelect={setSelectedId} onPilot={() => move("pilot")}/>
         </div>
         <div className="period-strip"><span><strong>Дата решения</strong> Декабрь 2024</span>
@@ -171,7 +212,8 @@ function App() {
         </div>
       </>}
       <div hidden={tab !== "pilot"}>
-        <Pilot rows={rows} selected={selected} onSelect={setSelectedId} onBack={() => move("atlas")}/>
+        <Pilot rows={rows} selected={selected} decision={decisions[selected?.id]} storageFailed={storageFailed}
+          onDecision={record} onSelect={setSelectedId} onBack={() => move("atlas")}/>
       </div>
       {tab === "review" && <Review data={atlas}/>}
       <footer><a href="https://sberindex.ru/ru/research/data-sense-opisanie-nabora-dannikh-khakatona-sberindeksa-po-munitsipalnim-dannim">СберИндекс</a> · муниципальные расходы на маркетплейсах · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>
