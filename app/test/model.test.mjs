@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "csv-parse/sync";
-import { shortlist, orderThreshold, csvText, loadDecisions, saveDecision } from "../src/model.mjs";
+import { shortlist, orderThreshold, csvText, loadDecisions, saveDecision, regionalResult } from "../src/model.mjs";
 
 const rows = [
   { id: "11", region: "A", base: 2500, score: 1.1 },
@@ -60,4 +60,24 @@ test("export pairs each row with its decision, retains multiline notes and treat
   assert.equal(report[0]["Наличие товара"], "Не отмечено");
   assert.equal(report[1]["Причина"], "Нет доставки");
   assert.equal(report[2]["Статус"], "Не оценён");
+});
+
+test("the regional comparison uses the requested cohort, denominator and best alternative", () => {
+  const results = [
+    { cohort: "all", floor: "2000", slices: "432", slots: "1296", signal_hits: "743",
+      absolute_delta_hits: "553", low_base_hits: "557", recent_growth_hits: "551", adaptive_growth_hits: "547" },
+    { cohort: "common", floor: "2000", slices: "266", slots: "798", signal_hits: "463",
+      absolute_delta_hits: "348", low_base_hits: "359", recent_growth_hits: "340", adaptive_growth_hits: "330" },
+  ];
+  const all = regionalResult(results, "all", 2000);
+  assert.equal(all.slots, 1296);
+  assert.equal(all.methods[0].hits, 743);
+  assert.equal(all.methods[1].id, "low_base_hits");
+  assert.equal(all.lead, 186);
+  const paired = regionalResult(results, "common", 2000);
+  assert.equal(paired.slices, 266);
+  assert.equal(paired.slots, 798);
+  assert.equal(paired.methods[0].hits, 463);
+  assert.equal(paired.lead, 104);
+  assert.equal(regionalResult(results, "all", 3000), null);
 });

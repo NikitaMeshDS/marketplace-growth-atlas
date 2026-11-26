@@ -13,6 +13,26 @@ export const pilotChecks = {
   stock: "Наличие товара",
   ads: "Доступная зона показа",
 };
+const regionalMethods = {
+  signal_hits: "Сигнал роста",
+  absolute_delta_hits: "Прирост в рублях",
+  low_base_hits: "Низкая прошлогодняя база",
+  recent_growth_hits: "Последний годовой темп",
+  adaptive_growth_hits: "Сглаженный темп",
+};
+
+export function regionalResult(rows, cohort, floor) {
+  const row = rows.find(item => item.cohort === cohort && Number(item.floor) === floor);
+  if (!row) return null;
+  const methods = Object.entries(regionalMethods)
+    .map(([id, name]) => ({ id, name, hits: Number(row[id]) }));
+  const [signal, ...alternatives] = methods;
+  alternatives.sort((a, b) => b.hits - a.hits);
+  return {
+    slices: Number(row.slices), slots: Number(row.slots),
+    methods: [signal, ...alternatives], lead: signal.hits - alternatives[0].hits,
+  };
+}
 
 function normalizeDecision(value) {
   return {
