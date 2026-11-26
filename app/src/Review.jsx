@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { ChevronDown } from "lucide-react";
 import { amount, regionalResult } from "./model.mjs";
 
@@ -12,9 +12,7 @@ const count = new Intl.NumberFormat("ru-RU");
 const percent = new Intl.NumberFormat("ru-RU", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const evidence = "https://github.com/NikitaMeshDS/marketplace-growth-atlas/blob/main/evidence/";
 
-function RegionalReview({ rows, regions }) {
-  const [floor, setFloor] = useState(2000);
-  const [cohort, setCohort] = useState("all");
+function RegionalReview({ rows, regions, floor, cohort, onChange }) {
   const result = regionalResult(rows, cohort, floor);
   if (!result) return null;
   const [signal, strongest] = result.methods;
@@ -28,14 +26,14 @@ function RegionalReview({ rows, regions }) {
     <div className="regional-controls">
       <label className="form-field" htmlFor="regional-floor"><span>Порог расходов год назад</span>
         <div className="select-wrap">
-          <select id="regional-floor" value={floor} onChange={event => setFloor(Number(event.target.value))}>
+          <select id="regional-floor" value={floor} onChange={event => onChange({ reviewFloor: Number(event.target.value) })}>
             {floors.map(value => <option key={value} value={value}>{value ? amount(value) : "Без порога"}</option>)}
           </select><ChevronDown size={16} aria-hidden="true"/>
         </div>
       </label>
       <label className="form-field" htmlFor="regional-cohort"><span>Срезы для сравнения</span>
         <div className="select-wrap">
-          <select id="regional-cohort" value={cohort} onChange={event => setCohort(event.target.value)}>
+          <select id="regional-cohort" value={cohort} onChange={event => onChange({ reviewCohort: event.target.value })}>
             <option value="all">Все срезы при этом пороге</option>
             <option value="common">Одни и те же срезы для всех порогов</option>
           </select><ChevronDown size={16} aria-hidden="true"/>
@@ -68,10 +66,10 @@ function RegionalReview({ rows, regions }) {
   </section>;
 }
 
-export function Review({ data }) {
+export function Review({ data, floor, cohort, onChange }) {
   const december = data.benchmark.filter(row => row.target === "2024-12" && row.mae);
   return <div className="review-layout">
-    <RegionalReview rows={data.regional} regions={data.reviewedRegions}/>
+    <RegionalReview rows={data.regional} regions={data.reviewedRegions} floor={floor} cohort={cohort} onChange={onChange}/>
     <section className="surface">
       <div className="section-heading">
         <h2>Отбор по общей выборке</h2>

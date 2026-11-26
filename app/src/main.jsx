@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, ChartNoAxesColumnIncreasing,
-  ChevronDown, FlaskConical, Map, MapPin, RotateCcw, MapPinned, SlidersHorizontal,
+  ChevronDown, FlaskConical, Link2, Map, MapPin, RotateCcw, MapPinned, SlidersHorizontal,
 } from "lucide-react";
 import atlas from "atlas-evidence";
 import "@fontsource-variable/manrope";
@@ -12,6 +12,7 @@ import {
 } from "./model.mjs";
 import { TerritoryMap } from "./TerritoryMap.jsx";
 import { Review } from "./Review.jsx";
+import { decodeRoute, defaultFloor, encodeRoute, floors } from "./route.mjs";
 
 const sections = [
   { key: "atlas", label: "Территории", icon: Map },
@@ -137,16 +138,28 @@ function Pilot({ rows, selected, decision, storageFailed, onDecision, onSelect, 
 }
 
 function App() {
-  const [tab, setTab] = useState("atlas");
-  const [region, setRegion] = useState("");
-  const [floor, setFloor] = useState(2000);
-  const [selectedId, setSelectedId] = useState(null);
+  const [route, setRoute] = useState(() => decodeRoute(window.location.hash, regions));
+  const { tab, region, floor, selectedId, reviewFloor, reviewCohort } = route;
+  const [shareStatus, setShareStatus] = useState("");
   const [storage] = useState(browserStorage);
   const [decisions, setDecisions] = useState(() => loadDecisions(storage));
   const [storageFailed, setStorageFailed] = useState(!storage);
   const { rows, count } = useMemo(() => shortlist(atlas.candidates, region, floor), [region, floor]);
   const selected = rows.find(row => row.id === selectedId) ?? rows[0];
   const [title, subtitle] = pageTitles[tab];
+
+  useEffect(() => {
+    function syncRoute() {
+      setRoute(decodeRoute(window.location.hash, regions));
+      setShareStatus("");
+    }
+    window.addEventListener("popstate", syncRoute);
+    window.addEventListener("hashchange", syncRoute);
+    return () => {
+      window.removeEventListener("popstate", syncRoute);
+      window.removeEventListener("hashchange", syncRoute);
+    };
+  }, []);
 
   useEffect(() => {
     if (storageFailed) return;
@@ -157,9 +170,39 @@ function App() {
     return () => window.removeEventListener("storage", syncDecisions);
   }, [storage, storageFailed]);
 
+  function updateRoute(patch, addToHistory = false) {
+    const next = { ...route, ...patch };
+    const url = new URL(window.location.href);
+    url.hash = encodeRoute(next);
+    if (url.href !== window.location.href) {
+      if (addToHistory) window.history.pushState(null, "", url);
+      else window.history.replaceState(null, "", url);
+    }
+    setRoute(next);
+    setShareStatus("");
+  }
+
   function move(next) {
-    setTab(next);
+    updateRoute({ tab: next }, true);
     window.scrollTo(0, 0);
+  }
+
+  async function copyLink() {
+    const url = new URL(window.location.href);
+    const sharedRoute = tab === "review"
+      ? { tab, floor: defaultFloor, reviewFloor, reviewCohort }
+      : { tab, region, floor, selectedId: selected?.id, reviewFloor: defaultFloor };
+    url.hash = encodeRoute(sharedRoute);
+    try {
+      await navigator.clipboard.writeText(url.href);
+      setShareStatus("Ссылка скопирована.");
+    } catch {
+      setShareStatus("Скопируйте адрес из строки браузера.");
+    }
+  }
+
+  function selectCandidate(id) {
+    updateRoute({ selectedId: id });
   }
 
   function record(id, patch) {
@@ -182,29 +225,35 @@ function App() {
     <main>
       <div className="page-heading">
         <div><h1>{title}</h1><p>{subtitle}</p></div>
-        {tab !== "review" && <button className="button secondary export" disabled={!rows.length}
-          onClick={() => download(rows, decisions)}><ArrowDownToLine size={17}/> Скачать список</button>}
+        <div className="page-actions">
+          <button className="button secondary" onClick={copyLink}><Link2 size={17}/> Скопировать ссылку</button>
+          {tab !== "review" && <button className="button secondary" disabled={!rows.length}
+            onClick={() => download(rows, decisions)}><ArrowDownToLine size={17}/> Скачать список</button>}
+          <span className="share-status" role="status">{shareStatus}</span>
+        </div>
       </div>
       {tab === "atlas" && <>
         <div className="filterbar">
           <div className="filter-title"><SlidersHorizontal size={20}/> <strong>Параметры отбора</strong></div>
-          <Select id="region" label="Субъект РФ" value={region} onChange={e => setRegion(e.target.value)}>
+          <Select id="region" label="Субъект РФ" value={region}
+            onChange={e => updateRoute({ region: e.target.value, selectedId: null })}>
             <option value="">Все субъекты</option>
             {regions.map(name => <option key={name}>{name}</option>)}
           </Select>
-          <Select id="floor" label="Минимум расходов год назад" value={floor} onChange={e => setFloor(Number(e.target.value))}>
+          <Select id="floor" label="Минимум расходов год назад" value={floor}
+            onChange={e => updateRoute({ floor: Number(e.target.value), selectedId: null })}>
             <option value="0">Без порога</option>
-            {[1000, 2000, 3000].map(value => <option key={value} value={value}>{amount(value)} на жителя</option>)}
+            {floors.filter(Boolean).map(value => <option key={value} value={value}>{amount(value)} на жителя</option>)}
           </Select>
-          <button className="reset" onClick={() => { setRegion(""); setFloor(2000); setSelectedId(null); }}>
+          <button className="reset" onClick={() => updateRoute({ region: "", floor: defaultFloor, selectedId: null })}>
             <RotateCcw size={15}/> Сбросить
           </button>
         </div>
         <div className="workbench">
           <TerritoryMap data={atlas.candidates} outline={atlas.outline} rows={rows}
-            selected={selected} onSelect={setSelectedId}/>
+            selected={selected} onSelect={selectCandidate}/>
           <CandidateList rows={rows} count={count} selected={selected} decisions={decisions}
-            onSelect={setSelectedId} onPilot={() => move("pilot")}/>
+            onSelect={selectCandidate} onPilot={() => move("pilot")}/>
         </div>
         <div className="period-strip"><span><strong>Дата решения</strong> Декабрь 2024</span>
           <span><strong>Данные доступны по</strong> Октябрь 2024</span>
@@ -213,9 +262,9 @@ function App() {
       </>}
       <div hidden={tab !== "pilot"}>
         <Pilot rows={rows} selected={selected} decision={decisions[selected?.id]} storageFailed={storageFailed}
-          onDecision={record} onSelect={setSelectedId} onBack={() => move("atlas")}/>
+          onDecision={record} onSelect={selectCandidate} onBack={() => move("atlas")}/>
       </div>
-      {tab === "review" && <Review data={atlas}/>}
+      {tab === "review" && <Review data={atlas} floor={reviewFloor} cohort={reviewCohort} onChange={updateRoute}/>}
       <footer><a href="https://sberindex.ru/ru/research/data-sense-opisanie-nabora-dannikh-khakatona-sberindeksa-po-munitsipalnim-dannim">СберИндекс</a> · муниципальные расходы на маркетплейсах · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>
         <span>Демонстрация на исторических данных</span></footer>
     </main>

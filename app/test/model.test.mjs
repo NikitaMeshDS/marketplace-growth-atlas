@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "csv-parse/sync";
 import { shortlist, orderThreshold, csvText, loadDecisions, saveDecision, regionalResult } from "../src/model.mjs";
+import { decodeRoute, encodeRoute } from "../src/route.mjs";
 
 const rows = [
   { id: "11", region: "A", base: 2500, score: 1.1 },
@@ -80,4 +81,24 @@ test("the regional comparison uses the requested cohort, denominator and best al
   assert.equal(paired.methods[0].hits, 463);
   assert.equal(paired.lead, 104);
   assert.equal(regionalResult(results, "all", 3000), null);
+});
+
+test("a public link round-trips the scenario and review filters without private fields", () => {
+  const regions = ["Красноярский край"];
+  const route = {
+    tab: "pilot", region: regions[0], floor: 2000, selectedId: "708",
+    reviewFloor: 3000, reviewCohort: "common",
+  };
+  const hash = encodeRoute({ ...route, reason: "личная заметка", budget: "9173" });
+  assert.equal(hash.includes("9173"), false);
+  assert.equal(new URLSearchParams(hash.slice(1)).has("reason"), false);
+  assert.deepEqual(decodeRoute(hash, regions), route);
+});
+
+test("unknown URL values fall back to the standard demo", () => {
+  const invalid = "#section=menu&region=unknown&floor=1234&candidate=broken&review-floor=0x0&cohort=custom";
+  const regions = ["Красноярский край"];
+  assert.deepEqual(decodeRoute(invalid, regions), decodeRoute("", regions));
+  assert.equal(decodeRoute("#section=review&floor=0&review-floor=0", regions).reviewFloor, 0);
+  assert.equal(encodeRoute(decodeRoute("", regions)), "");
 });
