@@ -102,6 +102,20 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(metrics.at["last", "pairs"], 4)
         self.assertEqual(metrics.at["last", "top3_hits"], 2)
 
+    def test_absolute_target_reevaluates_the_same_shortlists_against_ruble_growth(self):
+        from analysis import evaluate_predictions
+
+        data = panel()
+        target = pd.Period("2024-08", freq="M")
+        data.loc[target - 12] = [100, 2000, 10000, 20000, 50000]
+        data.loc[target - 2] = [200, 3100, 12000, 22100, 80000]
+        data.loc[target] = [260, 2700, 11050, 21700, 90000]
+        pool = forecast(data, target, 1).loc[["A", "B", "C", "D"]]
+        result = evaluate_predictions(pool, data.loc[target], target, 1, 0, score_absolute=True)
+        result = result.set_index("method")
+        self.assertEqual(result.loc["last", ["top3_hits", "top3_absolute_hits"]].tolist(), [3, 2])
+        self.assertEqual(result.loc["last_delta", ["top3_hits", "top3_absolute_hits"]].tolist(), [2, 3])
+
     def test_regional_coverage_accounts_for_small_pools_and_missing_outcomes(self):
         from analysis import regional_coverage
 

@@ -21,6 +21,9 @@ REGIONAL_RULES = {
     "recent": "recent_growth_hits",
     "adaptive": "adaptive_growth_hits",
 }
+REGIONAL_ABSOLUTE_RULES = {
+    method: f"ruble_target_{column}" for method, column in REGIONAL_RULES.items()
+}
 
 
 def load_panel(path: Path) -> pd.DataFrame:
@@ -98,12 +101,16 @@ def evaluate(
 
 def evaluate_predictions(
     predictions: pd.DataFrame, outcomes: pd.Series, target: pd.Period, lag: int, floor: int,
+    *, score_absolute: bool = False,
 ) -> pd.DataFrame:
     actual = outcomes.reindex(predictions.index)
     actual_growth = actual / predictions.year_ago - 1
     actual_percentile = actual_growth.rank(pct=True)
     rows = []
     observed_top3 = actual_growth.dropna().sort_values(ascending=False, kind="stable").head(3)
+    if score_absolute:
+        absolute_growth = actual - predictions.year_ago
+        absolute_top3 = absolute_growth.dropna().sort_values(ascending=False, kind="stable").head(3)
     ranking_baselines = {
         "low_base": -predictions.year_ago,
         "last_delta": predictions["last"] - predictions.year_ago,
@@ -140,6 +147,10 @@ def evaluate_predictions(
             "top3_observed": int(selected_pct.notna().sum()) if has_ranking else 0,
             "top3_hits": len(selected.index.intersection(observed_top3.index)) if complete_top3 else np.nan,
         })
+        if score_absolute:
+            rows[-1]["top3_absolute_hits"] = (
+                len(selected.index.intersection(absolute_top3.index)) if complete_top3 else np.nan
+            )
     return pd.DataFrame(rows)
 
 
@@ -216,6 +227,10 @@ def regional_coverage(
     years = membership.groupby(["region_name", "territory_id"]).year.nunique()
     stable = years[years.eq(2)].reset_index(name="years")
     regions = stable.groupby("region_name").territory_id.agg(set)
+    score_absolute = floor == REGIONAL_FLOOR
+    hit_columns = list(REGIONAL_RULES.values())
+    if score_absolute:
+        hit_columns.extend(REGIONAL_ABSOLUTE_RULES.values())
     result = []
     for target in TARGETS:
         predictions = forecast(panel, target, lag=1).sort_index()
@@ -225,18 +240,21 @@ def regional_coverage(
             pool = predictions.loc[predictions.index.isin(ids)]
             eligible = len(pool)
             observed = int(outcomes.reindex(pool.index).count())
-            hits = dict.fromkeys(REGIONAL_RULES.values(), np.nan)
+            hits = dict.fromkeys(hit_columns, np.nan)
             if eligible < MIN_REGIONAL_CANDIDATES:
                 status = "small_pool"
             elif observed < eligible:
                 status = "missing_outcomes"
             else:
-                scores = evaluate_predictions(pool, outcomes, target, 1, floor)
-                measured_hits = scores.set_index("method").loc[list(REGIONAL_RULES), "top3_hits"]
+                scores = evaluate_predictions(pool, outcomes, target, 1, floor, score_absolute=score_absolute)
+                ranked = scores.set_index("method").loc[list(REGIONAL_RULES)]
+                measured_hits = ranked.top3_hits
                 status = "unranked"
                 if measured_hits.notna().all():
                     status = "compared"
-                    hits = measured_hits.rename(index=REGIONAL_RULES).to_dict()
+                    hits.update(measured_hits.rename(index=REGIONAL_RULES).to_dict())
+                    if score_absolute:
+                        hits.update(ranked.top3_absolute_hits.rename(index=REGIONAL_ABSOLUTE_RULES).to_dict())
             result.append({
                 "region": region, "target": str(target), "cutoff": str(target - 2),
                 "floor": floor, "eligible": eligible, "observed": observed, "status": status, **hits,
@@ -299,8 +317,13 @@ def run(data: Path, geography: Path, destination: Path) -> None:
     regional_results = pd.concat(
         [regional_coverage(panel, geography_rows, floor) for floor in FLOORS], ignore_index=True,
     )
-    regional_results.loc[regional_results.floor.eq(REGIONAL_FLOOR)].to_csv(
+    demo_floor = regional_results.loc[regional_results.floor.eq(REGIONAL_FLOOR)]
+    absolute_columns = list(REGIONAL_ABSOLUTE_RULES.values())
+    demo_floor.drop(columns=absolute_columns).to_csv(
         destination / "regional-coverage.csv", index=False, float_format="%.0f"
+    )
+    demo_floor.loc[demo_floor.status.eq("compared")].drop(columns="status").to_csv(
+        destination / "regional-objectives.csv", index=False, float_format="%.0f"
     )
     summarize_regional_floors(regional_results).to_csv(
         destination / "regional-floor-comparison.csv", index=False, float_format="%.0f"
