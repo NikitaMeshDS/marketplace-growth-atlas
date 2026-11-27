@@ -80,7 +80,7 @@ npm run build --prefix app
 
 ## Повтор расчёта
 
-Нужны Python 3.10+, Node.js 20+, npm, Bash, curl и shasum. Скрипт загрузит два файла из зафиксированного коммита исходного проекта, сверит SHA-256 и пересчитает результаты и демо.
+Нужны Python 3.10+, Node.js 20+, npm, Bash и shasum. Скрипт проверяет контрольные суммы файлов из [папки данных](data) и с ними пересчитывает результаты и демо. Входные данные уже лежат в репозитории.
 
 ```bash
 python3 -m venv .venv
@@ -90,7 +90,7 @@ npm ci --prefix app
 ./reproduce.sh
 ```
 
-Если исходные файлы уже скачаны, передайте их каталог в `./reproduce.sh /path/to/data`. Имена файлов — `consumption.parquet` и `municipal_lookup.csv`. Контрольные суммы проверяются в обоих режимах.
+Для проверки на своей локальной копии передайте каталог с файлами `consumption.parquet` и `municipal_lookup.csv` в `./reproduce.sh /path/to/data`. Скрипт принимает входные файлы из этого репозитория или полные версии, с которых подготовлена выборка, и сверяет их контрольные суммы.
 
 | Файл | Что проверять |
 |---|---|
@@ -109,4 +109,4 @@ npm ci --prefix app
 
 ## Источники и лицензия
 
-Потребительские безналичные расходы на уровне муниципальных образований по категориям трат. СберИндекс. Данные получены 23 ноября 2026 года из зафиксированного снимка. Лицензия на источник и производные материалы на его основе в папке `evidence` — [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). [Описание данных](https://sberindex.ru/ru/research/data-sense-opisanie-nabora-dannikh-khakatona-sberindeksa-po-munitsipalnim-dannim) · [Зафиксированный снимок исходного репозитория и справочника](https://github.com/NikitaMeshDS/sberindex-task2/tree/04948354fadac437c50a25b461c603581a7279f4).
+Данные Лаборатории СберИндекс. Для воспроизведения в репозитории сохранены только строки расходов категории «Маркетплейсы» за 2023–2024 годы и поля справочника, которые использует расчёт. Входные данные и производные материалы на их основе в `evidence` распространяются по лицензии [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). [Описание данных о расходах](https://sberindex.ru/ru/research/data-sense-opisanie-nabora-dannikh-khakatona-sberindeksa-po-munitsipalnim-dannim) · [Описание справочника муниципалитетов](https://sberindex.ru/ru/research/dataset-borders-and-changes-of-municipalities).
