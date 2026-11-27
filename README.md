@@ -2,7 +2,7 @@
 
 Стипендиальный проект для номинации «Технологии электронной коммерции». Помогает составить короткий список территорий, в которых продавцу стоит проверить возможность пробного продвижения.
 
-[Открыть «Атлас спроса» в браузере](https://nikitameshds.github.io/marketplace-growth-atlas/demo.html) · [Скачать автономное демо](https://raw.githubusercontent.com/NikitaMeshDS/marketplace-growth-atlas/main/demo.html) · [Сценарий проверки с продавцом](docs/seller-review.md)
+[Открыть «Атлас спроса» в браузере](https://nikitameshds.github.io/marketplace-growth-atlas/demo.html) · [Скачать автономное демо](https://raw.githubusercontent.com/NikitaMeshDS/marketplace-growth-atlas/main/demo.html) · [Сценарий проверки с продавцом](docs/seller-review.md) · [Портфолио автора](docs/portfolio.md)
 
 ![Экран Атласа спроса с картой и списком кандидатов](docs/atlas-preview.png)
 
