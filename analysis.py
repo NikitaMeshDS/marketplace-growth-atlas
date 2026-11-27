@@ -275,6 +275,19 @@ def summarize_regional_floors(results: pd.DataFrame) -> pd.DataFrame:
     return summary.reset_index()
 
 
+def summarize_regional_months(compared: pd.DataFrame) -> pd.DataFrame:
+    """Report both ranking objectives by month, including a fixed group of regions."""
+    months_per_region = compared.groupby("region").target.transform("nunique")
+    complete = compared.loc[months_per_region.eq(len(TARGETS))]
+    cohorts = pd.concat({"all": compared, "complete": complete}, names=["cohort"])
+    monthly = cohorts.groupby([cohorts.index.get_level_values("cohort"), "target"])
+    hit_columns = [*REGIONAL_RULES.values(), *REGIONAL_ABSOLUTE_RULES.values()]
+    summary = monthly[hit_columns].sum()
+    summary.insert(0, "slices", monthly.size())
+    summary.insert(1, "slots", summary.slices * 3)
+    return summary.reset_index()
+
+
 def run(data: Path, geography: Path, destination: Path) -> None:
     panel = load_panel(data)
     destination.mkdir(parents=True, exist_ok=True)
@@ -322,8 +335,12 @@ def run(data: Path, geography: Path, destination: Path) -> None:
     demo_floor.drop(columns=absolute_columns).to_csv(
         destination / "regional-coverage.csv", index=False, float_format="%.0f"
     )
-    demo_floor.loc[demo_floor.status.eq("compared")].drop(columns="status").to_csv(
+    compared_objectives = demo_floor.loc[demo_floor.status.eq("compared")].drop(columns="status")
+    compared_objectives.to_csv(
         destination / "regional-objectives.csv", index=False, float_format="%.0f"
+    )
+    summarize_regional_months(compared_objectives).to_csv(
+        destination / "regional-by-month.csv", index=False, float_format="%.0f"
     )
     summarize_regional_floors(regional_results).to_csv(
         destination / "regional-floor-comparison.csv", index=False, float_format="%.0f"
