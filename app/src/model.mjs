@@ -21,9 +21,7 @@ const regionalMethods = {
   adaptive_growth_hits: "Сглаженный темп",
 };
 
-export function regionalResult(rows, cohort, floor) {
-  const row = rows.find(item => item.cohort === cohort && Number(item.floor) === floor);
-  if (!row) return null;
+function rankRegionalMethods(row) {
   const methods = Object.entries(regionalMethods)
     .map(([id, name]) => ({ id, name, hits: Number(row[id]) }));
   const [signal, ...alternatives] = methods;
@@ -34,6 +32,18 @@ export function regionalResult(rows, cohort, floor) {
   };
 }
 
+export function regionalResult(rows, cohort, floor) {
+  const row = rows.find(item => item.cohort === cohort && Number(item.floor) === floor);
+  return row ? rankRegionalMethods(row) : null;
+}
+
+export function rubleRegionalResult(rows) {
+  if (!rows.length) return null;
+  const totals = Object.fromEntries(Object.keys(regionalMethods).map(id => [
+    id, rows.reduce((sum, row) => sum + Number(row[`ruble_target_${id}`]), 0),
+  ]));
+  return rankRegionalMethods({ ...totals, slices: rows.length, slots: rows.length * 3 });
+}
 function normalizeDecision(value) {
   return {
     status: Object.hasOwn(decisionStatuses, value?.status) ? value.status : "pending",

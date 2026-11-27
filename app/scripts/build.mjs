@@ -4,6 +4,7 @@ import path from "node:path";
 import esbuild from "esbuild";
 import { parse } from "csv-parse/sync";
 import { feature } from "topojson-client";
+import { rubleRegionalResult } from "../src/model.mjs";
 
 const app = fileURLToPath(new URL("../", import.meta.url));
 const root = path.resolve(app, "..");
@@ -15,9 +16,10 @@ async function table(file) {
   });
 }
 
-const [candidates, history, comparisons, benchmark, regional, regionalCoverage] = await Promise.all([
+const [candidates, history, comparisons, benchmark, regional, regionalCoverage, objectives] = await Promise.all([
   table("pilot-candidates.csv"), table("shortlist.csv"), table("floor-comparison.csv"),
   table("backtest.csv"), table("regional-floor-comparison.csv"), table("regional-coverage.csv"),
+  table("regional-objectives.csv"),
 ]);
 const atlas = JSON.parse(await readFile(path.join(app, "node_modules/world-atlas/countries-110m.json"), "utf8"));
 const countries = feature(atlas, atlas.objects.countries).features;
@@ -34,6 +36,7 @@ const data = {
   history,
   comparisons,
   regional,
+  rubleRegional: rubleRegionalResult(objectives),
   reviewedRegions: new Set(regionalCoverage.filter(row => row.status === "compared").map(row => row.region)).size,
   benchmark: benchmark.filter(row => row.lag === "1" && row.target === "2024-12"),
   outline: outline.geometry.coordinates,

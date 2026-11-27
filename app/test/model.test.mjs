@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parse } from "csv-parse/sync";
-import { shortlist, orderThreshold, csvText, loadDecisions, saveDecision, regionalResult } from "../src/model.mjs";
+import { shortlist, orderThreshold, csvText, loadDecisions, saveDecision, regionalResult, rubleRegionalResult } from "../src/model.mjs";
 import { decodeRoute, encodeRoute } from "../src/route.mjs";
 
 const rows = [
@@ -83,11 +83,27 @@ test("the regional comparison uses the requested cohort, denominator and best al
   assert.equal(regionalResult(results, "all", 3000), null);
 });
 
+test("the ruble objective totals the paired slices and can favor another rule", () => {
+  const row = {
+    signal_hits: "3", ruble_target_signal_hits: "1", ruble_target_absolute_delta_hits: "2",
+    ruble_target_low_base_hits: "0", ruble_target_recent_growth_hits: "1",
+    ruble_target_adaptive_growth_hits: "0",
+  };
+  const result = rubleRegionalResult([row, row]);
+  assert.equal(result.slices, 2);
+  assert.equal(result.slots, 6);
+  assert.equal(result.methods[0].hits, 2);
+  assert.equal(result.methods[1].id, "absolute_delta_hits");
+  assert.equal(result.methods[1].hits, 4);
+  assert.equal(result.lead, -2);
+  assert.equal(rubleRegionalResult([]), null);
+});
+
 test("a public link round-trips the scenario and review filters without private fields", () => {
   const regions = ["Красноярский край"];
   const route = {
     tab: "pilot", region: regions[0], floor: 2000, selectedId: "708",
-    reviewFloor: 3000, reviewCohort: "common",
+    reviewFloor: 3000, reviewCohort: "common", reviewObjective: "rubles",
   };
   const hash = encodeRoute({ ...route, reason: "личная заметка", budget: "9173" });
   assert.equal(hash.includes("9173"), false);

@@ -139,7 +139,7 @@ function Pilot({ rows, selected, decision, storageFailed, onDecision, onSelect, 
 
 function App() {
   const [route, setRoute] = useState(() => decodeRoute(window.location.hash, regions));
-  const { tab, region, floor, selectedId, reviewFloor, reviewCohort } = route;
+  const { tab, region, floor, selectedId, reviewFloor, reviewCohort, reviewObjective } = route;
   const [shareStatus, setShareStatus] = useState("");
   const [storage] = useState(browserStorage);
   const [decisions, setDecisions] = useState(() => loadDecisions(storage));
@@ -190,7 +190,8 @@ function App() {
   async function copyLink() {
     const url = new URL(window.location.href);
     const sharedRoute = tab === "review"
-      ? { tab, floor: defaultFloor, reviewFloor, reviewCohort }
+      ? { tab, floor: defaultFloor, reviewFloor: reviewObjective === "rubles" ? defaultFloor : reviewFloor,
+        reviewCohort: reviewObjective === "rubles" ? "all" : reviewCohort, reviewObjective }
       : { tab, region, floor, selectedId: selected?.id, reviewFloor: defaultFloor };
     url.hash = encodeRoute(sharedRoute);
     try {
@@ -264,7 +265,8 @@ function App() {
         <Pilot rows={rows} selected={selected} decision={decisions[selected?.id]} storageFailed={storageFailed}
           onDecision={record} onSelect={selectCandidate} onBack={() => move("atlas")}/>
       </div>
-      {tab === "review" && <Review data={atlas} floor={reviewFloor} cohort={reviewCohort} onChange={updateRoute}/>}
+      {tab === "review" && <Review data={atlas} floor={reviewFloor} cohort={reviewCohort}
+        objective={reviewObjective} onChange={updateRoute}/>}
       <footer><a href="https://sberindex.ru/ru/research/data-sense-opisanie-nabora-dannikh-khakatona-sberindeksa-po-munitsipalnim-dannim">СберИндекс</a> · муниципальные расходы на маркетплейсах · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>
         <span>Демонстрация на исторических данных</span></footer>
     </main>

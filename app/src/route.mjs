@@ -14,10 +14,11 @@ export function decodeRoute(hash, regions) {
     selectedId: /^\d+$/.test(candidate ?? "") ? candidate : null,
     reviewFloor: floorByText.get(params.get("review-floor")) ?? defaultFloor,
     reviewCohort: params.get("cohort") === "common" ? "common" : "all",
+    reviewObjective: params.get("objective") === "rubles" ? "rubles" : "percent",
   };
 }
 
-export function encodeRoute({ tab, region, floor, selectedId, reviewFloor, reviewCohort }) {
+export function encodeRoute({ tab, region, floor, selectedId, reviewFloor, reviewCohort, reviewObjective }) {
   const params = new URLSearchParams();
   if (tab !== "atlas") params.set("section", tab);
   if (region) params.set("region", region);
@@ -25,5 +26,6 @@ export function encodeRoute({ tab, region, floor, selectedId, reviewFloor, revie
   if (selectedId) params.set("candidate", selectedId);
   if (reviewFloor !== defaultFloor) params.set("review-floor", reviewFloor);
   if (reviewCohort === "common") params.set("cohort", reviewCohort);
+  if (reviewObjective === "rubles") params.set("objective", reviewObjective);
   return params.size ? "#" + params : "";
 }
