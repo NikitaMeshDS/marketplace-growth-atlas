@@ -1,6 +1,6 @@
 import React from "react";
 import { ChevronDown } from "lucide-react";
-import { amount, regionalResult } from "./model.mjs";
+import { amount, regionalMonthResult, regionalResult } from "./model.mjs";
 
 const methodNames = {
   last: "Последний доступный уровень", recent: "Последний годовой темп",
@@ -12,7 +12,31 @@ const count = new Intl.NumberFormat("ru-RU");
 const percent = new Intl.NumberFormat("ru-RU", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const evidence = "https://github.com/NikitaMeshDS/marketplace-growth-atlas/blob/main/evidence/";
 
-function RegionalReview({ rows, rubleResult, regions, floor, cohort, objective, onChange }) {
+const month = new Intl.DateTimeFormat("ru-RU", { month: "long", timeZone: "UTC" });
+
+function MonthlyReview({ rows, objective }) {
+  const results = rows.map(row => regionalMonthResult(row, objective));
+  const leader = results[0].leader.name;
+  const wins = results.filter(row => row.leader.hits > row.alternative.hits).length;
+  return <details className="monthly-review">
+    <summary>Сравнение по месяцам</summary>
+    <p className="inline-note">{rows[0].slices} субъекта с полными данными, порог 2 000 ₽ на жителя.
+      В каждом месяце сравниваем {rows[0].slots} мест в тройках.</p>
+    <p className="monthly-result">«{leader}» опередил остальные правила в {wins} из {results.length} месяцев.</p>
+    <table aria-label="Попадания в тройку по месяцам">
+      <thead><tr><th scope="col">Месяц</th><th scope="col">{leader}</th><th scope="col">Лучшее из остальных правил</th></tr></thead>
+      <tbody>{results.map(({ target, leader, alternative }) => <tr key={target}>
+        <th className="month-label" scope="row">{month.format(new Date(`${target}-01T00:00:00Z`))}</th>
+        <td className={leader.hits > alternative.hits ? "highlight" : undefined}>{leader.hits}</td>
+        <td><strong className={alternative.hits > leader.hits ? "highlight" : undefined}>{alternative.hits}</strong>
+          <small>{alternative.name}</small></td>
+      </tr>)}</tbody>
+    </table>
+    <a href={evidence + "regional-by-month.csv"}>Открыть полную таблицу CSV</a>
+  </details>;
+}
+
+function RegionalReview({ rows, monthly, rubleResult, regions, floor, cohort, objective, onChange }) {
   const rubles = objective === "rubles";
   const result = rubles ? rubleResult : regionalResult(rows, cohort, floor);
   if (!result) return null;
@@ -77,6 +101,7 @@ function RegionalReview({ rows, rubleResult, regions, floor, cohort, objective, 
     <p className="inline-note">{rubles
       ? "Списки кандидатов остаются прежними. Меняется правило, по которому определяются фактические лидеры."
       : "В каждом срезе сравнивается один и тот же пул из 10 и более кандидатов с известными итогами. При смене порога пул и фактическая тройка пересчитываются."}</p>
+    {monthly.length > 0 && <MonthlyReview rows={monthly} objective={objective}/>}
     <div className="regional-sources">
       <a href={evidence + "regional-coverage.csv"}>Данные по субъектам и месяцам</a>
       <a href={evidence + "regional-floor-comparison.csv"}>Сводка по порогам</a>
@@ -88,7 +113,7 @@ function RegionalReview({ rows, rubleResult, regions, floor, cohort, objective, 
 export function Review({ data, floor, cohort, objective, onChange }) {
   const december = data.benchmark.filter(row => row.target === "2024-12" && row.mae);
   return <div className="review-layout">
-    <RegionalReview rows={data.regional} rubleResult={data.rubleRegional} regions={data.reviewedRegions}
+    <RegionalReview rows={data.regional} monthly={data.monthly} rubleResult={data.rubleRegional} regions={data.reviewedRegions}
       floor={floor} cohort={cohort} objective={objective} onChange={onChange}/>
     <section className="surface">
       <div className="section-heading">

@@ -170,6 +170,17 @@ footer span { margin-left: auto; }
 .regional-leader .regional-track span { background: var(--indigo); }
 .regional-difference { font-size: 14px; font-weight: 800; margin-top: 17px; }
 .regional-sources { display: flex; flex-wrap: wrap; gap: 7px 19px; margin-top: 13px; font-size: 13px; }
+.monthly-review { margin-top: 17px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; }
+.monthly-review summary { cursor: pointer; color: var(--indigo); font-size: 14px; font-weight: 850; }
+.monthly-review .inline-note { margin-top: 9px; }
+.monthly-result { margin: 7px 0; font-size: 13px; font-weight: 800; }
+.monthly-review table { min-width: 0; table-layout: fixed; }
+.monthly-review th:first-child { width: 28%; }
+.monthly-review td:nth-child(2), .monthly-review th:nth-child(2) { width: 28%; }
+.monthly-review td { font-variant-numeric: tabular-nums; }
+.monthly-review td small { display: block; color: var(--muted); }
+.month-label { text-transform: capitalize; }
+.monthly-review a { display: inline-block; margin-top: 7px; font-size: 13px; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; min-width: 385px; }
 th, td { padding: 10px 7px; text-align: left; border-bottom: 1px solid var(--line); font-size: 13px; }

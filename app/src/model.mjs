@@ -44,6 +44,19 @@ export function rubleRegionalResult(rows) {
   ]));
   return rankRegionalMethods({ ...totals, slices: rows.length, slots: rows.length * 3 });
 }
+export function regionalMonthResult(row, objective) {
+  const inRubles = objective === "rubles";
+  const leaderId = inRubles ? "absolute_delta_hits" : "signal_hits";
+  const prefix = inRubles ? "ruble_target_" : "";
+  const methods = Object.entries(regionalMethods).map(([id, name]) => ({
+    id, name, hits: Number(row[prefix + id]),
+  }));
+  const leader = methods.find(method => method.id === leaderId);
+  const alternative = methods.filter(method => method.id !== leaderId)
+    .reduce((best, method) => method.hits > best.hits ? method : best);
+  return { target: row.target, leader, alternative };
+}
+
 function normalizeDecision(value) {
   return {
     status: Object.hasOwn(decisionStatuses, value?.status) ? value.status : "pending",

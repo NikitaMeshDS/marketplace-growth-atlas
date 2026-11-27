@@ -16,10 +16,10 @@ async function table(file) {
   });
 }
 
-const [candidates, history, comparisons, benchmark, regional, regionalCoverage, objectives] = await Promise.all([
+const [candidates, history, comparisons, benchmark, regional, regionalCoverage, objectives, monthly] = await Promise.all([
   table("pilot-candidates.csv"), table("shortlist.csv"), table("floor-comparison.csv"),
   table("backtest.csv"), table("regional-floor-comparison.csv"), table("regional-coverage.csv"),
-  table("regional-objectives.csv"),
+  table("regional-objectives.csv"), table("regional-by-month.csv"),
 ]);
 const atlas = JSON.parse(await readFile(path.join(app, "node_modules/world-atlas/countries-110m.json"), "utf8"));
 const countries = feature(atlas, atlas.objects.countries).features;
@@ -36,6 +36,7 @@ const data = {
   history,
   comparisons,
   regional,
+  monthly: monthly.filter(row => row.cohort === "complete"),
   rubleRegional: rubleRegionalResult(objectives),
   reviewedRegions: new Set(regionalCoverage.filter(row => row.status === "compared").map(row => row.region)).size,
   benchmark: benchmark.filter(row => row.lag === "1" && row.target === "2024-12"),

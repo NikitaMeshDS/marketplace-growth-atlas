@@ -1,0 +1,14 @@
+**
+!app/
+!app/index.html
+!app/package.json
+!app/package-lock.json
+!app/scripts/
+!app/scripts/**
+!app/src/
+!app/src/**
+!app/test/
+!app/test/**
+!evidence/
+!evidence/*.csv
+!nginx.conf
